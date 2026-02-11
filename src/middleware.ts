@@ -48,4 +48,26 @@ export async function AuthMiddleware(req : Request , res : Response , next : Nex
     }
 }
 
-
+export async function  TeacherMiddleware(req : Request , res : Response , next : NextFunction) {
+    try {
+        const user = await db.user.findUnique({
+            where : {
+                id : req.userId!,
+            }
+        })
+        if(user?.role !== "teacher"){
+            res.status(403).json({
+                success : false,
+                error : 'Forbidden, teacher access required'
+            })
+            return;
+        }
+        next();
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            success : false,
+            error : "teacher access required",
+        })
+    }
+}
