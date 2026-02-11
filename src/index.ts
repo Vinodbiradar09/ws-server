@@ -9,7 +9,6 @@ import {
 } from "./types.js";
 import jwt from "jsonwebtoken";
 import { AuthMiddleware, TeacherMiddleware } from "./middleware.js";
-import { tr } from "zod/locales";
 const app = express();
 
 app.use(express.json());
@@ -20,6 +19,7 @@ const activeSession: {
   startedAt?: string;
   attendance?: {};
 } = {};
+
 app.post("/auth/signup", async (req: Request, res: Response) => {
   try {
     const body = req.body;
@@ -197,11 +197,28 @@ app.post(
           id: id!,
         },
       });
-      if (!classdb || classdb.teacherId !== req.userId) {
+      if (!classdb) {
         res.status(403).json({
           success: false,
-          error: "Forbidden, not class teache",
+          error: "Class not found",
         });
+      }
+      if(classdb?.teacherId !== req.userId){
+        return res.status(403).json({
+          success: false,
+          error: "Forbidden: not class teacher",
+        });
+      }
+      const student = await db.user.findUnique({
+        where : {
+          id : data.studentId,
+        }
+      })
+      if(!student || student.role !== "student"){
+        return res.status(404).json({
+          success : false,
+          error : "Student not found",
+        })
       }
       const result = await db.class.update({
         where: {
@@ -274,8 +291,9 @@ app.get("/class/:id", AuthMiddleware, async (req: Request, res: Response) => {
       });
     }
     const studentIds = classdB?.students.map((ids) => ids);
-    const student = studentIds?.find((std) => std.id === req.userId!);
-    if (classdB?.teacherId !== req.userId || !student) {
+    const student = studentIds?.some((std) => std.id === req.userId!);
+    console.log("students" , student);
+    if (classdB?.teacherId !== req.userId && !student) {
       res.status(404).json({
         success: false,
         error: "User not found",
@@ -354,20 +372,12 @@ app.get(
           error: "params id not found",
         });
       }
-      const classdB = await db.class.findUnique({
+      const classdB = await db.class.findFirst({
         where: {
           id,
           students: {
             some: {
               id: req.userId!,
-            },
-          },
-        },
-        select: {
-          id: true,
-          attendance: {
-            select: {
-              status: true,
             },
           },
         },
@@ -378,11 +388,28 @@ app.get(
           error: "Class not found",
         });
       }
+      const attendance = await db.attendance.findUnique({
+        where : {
+          classId_studentId : {
+            classId : id,
+            studentId : req.userId!,
+          }
+        },
+        select : {
+          status : true
+        }
+      })
+      if(!attendance){
+        return res.status(404).json({
+          success : false,
+          error : "Attendance not found",
+        })
+      }
       res.status(200).json({
         success: true,
         data: {
           classId: classdB?.id,
-          status: classdB?.attendance,
+          status: attendance.status,
         },
       });
     } catch (error) {
@@ -444,3 +471,6 @@ app.post(
   },
 );
 
+app.listen(3000 , ()=>{
+  console.log("server is running at 3000");
+})

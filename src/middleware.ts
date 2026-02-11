@@ -3,14 +3,18 @@ import jwt, { type JwtPayload } from "jsonwebtoken";
 import { db } from "./lib.js";
 export async function AuthMiddleware(req : Request , res : Response , next : NextFunction) {
     try {
-        const token = req.cookies || req.headers;
+        const token = req.headers.authorization;
+        console.log("token" , token);
         if(!token){
             res.status(400).json({
                 success : false,
                 error : "token not found",
             })
+            return;
         }
-        const userDecoder = jwt.verify(token , process.env.JWTSECRET!) as JwtPayload;
+        const [scheme , header] = token.split(" ");
+        const userDecoder = jwt.verify(header! , process.env.JWTSECRET!) as JwtPayload;
+        console.log("decoder" , userDecoder);
         if(!userDecoder){
             res.status(404).json({
                 success : false,
