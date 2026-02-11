@@ -222,3 +222,147 @@ app.post("/class/:id/add-student" , AuthMiddleware , TeacherMiddleware , async(r
     })
   }
 })
+
+app.get("/class/:id" , AuthMiddleware , async(req : Request , res : Response)=>{
+  try {
+    const { id } = req.params;
+    if(!id || Array.isArray(id)){
+      return res.status(404).json({
+        success : false,
+        error : "params id not found",
+      })
+    }
+    const classdB = await db.class.findUnique({
+      where : {
+        id,
+      },
+      include : {
+        students : {
+          select : {
+            id : true,
+            name : true,
+            email : true,
+          }
+        }
+      }
+    })
+    if(!classdB){
+      res.status(404).json({
+        success : false,
+        error : "Class not found",
+      })
+    }
+    const studentIds = classdB?.students.map(( ids ) => ids);
+    const student = studentIds?.find(( std) => std.id === req.userId!);
+    if(classdB?.teacherId !== req.userId || !student){
+      res.status(404).json({
+        success : false,
+        error : "User not found",
+      })
+    }
+    res.status(200).json({
+      success : true,
+      data : {
+        id : classdB?.id,
+        className : classdB?.className,
+        teacherId : classdB?.teacherId,
+        students : classdB?.students,
+      }
+    })
+    // if(req.role === "teacher" && classdB?.teacherId === req.userId){
+
+    // } else if (req.role === "student" && student ){
+      
+    // } else {
+
+    // }
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      success : false,
+      error : "internal server error",
+    })
+  }
+})
+
+app.get("/students" , AuthMiddleware , TeacherMiddleware, async(req : Request ,res : Response)=>{
+  try {
+    const students = await db.user.findMany({
+      where : {
+        role : "student",
+      },
+      select : {
+        id : true,
+        name : true,
+        email : true,
+      }
+    })
+    if(students.length === 0){
+      return res.status(404).json({
+       success : false,
+       error : "Students not found",
+      })
+    }
+    res.status(200).json({
+      success : true,
+      data : students,
+    })
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      success : false,
+      error : "internal server error",
+    })
+  }
+})
+
+app.get("/class/:id/my-attendance" , AuthMiddleware , async (req : Request , res : Response)=>{
+  try {
+    const { id } = req.params;
+    if(!id || Array.isArray(id)){
+      return res.status(404).json({
+        success : false,
+        error : "params id not found",
+      })
+    }
+    const classdB = await db.class.findUnique({
+      where : {
+        id,
+        students : {
+          some : {
+            id : req.userId!,
+          }
+        }
+      },
+      select : {
+        id : true,
+        attendance : {
+          select : {
+            status : true,
+          }
+        }
+      }
+    });
+    if(!classdB){
+        res.status(404).json({
+          success : false,
+          error : "Class not found",
+        })
+    }
+    res.status(200).json({
+      success : true,
+      data : {
+        classId : classdB?.id,
+        status : classdB?.attendance,
+      }
+    })
+
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+     success : false,
+     error : "internal server error",
+    })
+  }
+})
+
