@@ -19,3 +19,7 @@ export const classSchema = z.object({
 export const addStudent = z.object({
     studentId : z.string(),
 })
+
+export const attendanceSchema = z.object({
+    classId : z.string(),
+})
