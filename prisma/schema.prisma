@@ -49,8 +49,8 @@ model Attendance {
 }
 
 enum Role {
-  TEACHER
-  STUDENT
+  teacher
+  student
 }
 
 enum Status {
