@@ -7,18 +7,95 @@ import {
   loginSchema,
   signupSchema,
 } from "./types.js";
-import jwt from "jsonwebtoken";
+import jwt, { type JwtPayload } from "jsonwebtoken";
 import { AuthMiddleware, TeacherMiddleware } from "./middleware.js";
+import WebSocket, { WebSocketServer } from "ws";
+import { createServer } from "http";
 const app = express();
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
+const server = createServer(app);
+const wss = new WebSocketServer({ server, path: "/ws" });
+import url from "url";
 const activeSession: {
   classId?: string;
   startedAt?: string;
   attendance?: {};
 } = {};
+
+
+// const getActiveSession = ( teachedId = null)=>{
+//   if(!activeSession)
+// }
+
+wss.on("connection", (ws, req) => {
+  console.log("the client is connected");
+  // @ts-ignore
+  const parsedUrl = url.parse(req.url, true);
+  const token = parsedUrl.query.token;
+  console.log("token", token);
+  if (!token || Array.isArray(token)) {
+    ws.on("close", () => {
+      console.log("connecttion closed");
+    });
+    return null;
+  }
+  const { userId, role } = jwt.verify(
+    token,
+    process.env.JWTSECRET!,
+  ) as JwtPayload;
+  if (!userId || !role) {
+    ws.send(
+      JSON.stringify({
+        event: "ERROR",
+        data: { message: "Unauthorized or invalid token" },
+      }),
+    );
+    ws.on("close", () => {
+      console.log("connecion closed due to invalid token error");
+    });
+  }
+  console.log("userId", userId, role);
+  // @ts-ignore
+  ws.user = {
+    userId,
+    role,
+  };
+  ws.on("message", (message) => {
+    const parsed = JSON.parse(message.toString());
+    console.log("dadta", parsed);
+    const { event, data } = parsed;
+    switch (event) {
+      case "ATTENDANCE_MARKED":
+        // @ts-ignore
+        if (ws.user.role === "teacher") {
+          if (!activeSession) {
+            ws.send(
+              JSON.stringify({
+                event: "ERROR",
+                data: { message: "No active attendance session" },
+              }),
+            );
+          }
+          // @ts-ignore
+          activeSession.attendance[data.studentId] = data.status;
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(data);
+            }
+          });
+        } else {
+          ws.send(
+            JSON.stringify({
+              event: "ERROR",
+              data: { message: "Forbidden, teacher event only" },
+            }),
+          );
+          return;
+        }
+    }
+  });
+});
 
 app.post("/auth/signup", async (req: Request, res: Response) => {
   try {
@@ -203,22 +280,22 @@ app.post(
           error: "Class not found",
         });
       }
-      if(classdb?.teacherId !== req.userId){
+      if (classdb?.teacherId !== req.userId) {
         return res.status(403).json({
           success: false,
           error: "Forbidden: not class teacher",
         });
       }
       const student = await db.user.findUnique({
-        where : {
-          id : data.studentId,
-        }
-      })
-      if(!student || student.role !== "student"){
+        where: {
+          id: data.studentId,
+        },
+      });
+      if (!student || student.role !== "student") {
         return res.status(404).json({
-          success : false,
-          error : "Student not found",
-        })
+          success: false,
+          error: "Student not found",
+        });
       }
       const result = await db.class.update({
         where: {
@@ -292,7 +369,7 @@ app.get("/class/:id", AuthMiddleware, async (req: Request, res: Response) => {
     }
     const studentIds = classdB?.students.map((ids) => ids);
     const student = studentIds?.some((std) => std.id === req.userId!);
-    console.log("students" , student);
+    console.log("students", student);
     if (classdB?.teacherId !== req.userId && !student) {
       res.status(404).json({
         success: false,
@@ -389,21 +466,21 @@ app.get(
         });
       }
       const attendance = await db.attendance.findUnique({
-        where : {
-          classId_studentId : {
-            classId : id,
-            studentId : req.userId!,
-          }
+        where: {
+          classId_studentId: {
+            classId: id,
+            studentId: req.userId!,
+          },
         },
-        select : {
-          status : true
-        }
-      })
-      if(!attendance){
+        select: {
+          status: true,
+        },
+      });
+      if (!attendance) {
         return res.status(404).json({
-          success : false,
-          error : "Attendance not found",
-        })
+          success: false,
+          error: "Attendance not found",
+        });
       }
       res.status(200).json({
         success: true,
@@ -438,39 +515,38 @@ app.post(
         return;
       }
       const classdB = await db.class.findUnique({
-        where : {
-          id : data.classId,
-        }
-      })
-      if(!classdB || classdB.teacherId !== req.userId){
+        where: {
+          id: data.classId,
+        },
+      });
+      if (!classdB || classdB.teacherId !== req.userId) {
         res.status(403).json({
-          success : false,
-          error : "Forbidden, not class teacher"
-        })
+          success: false,
+          error: "Forbidden, not class teacher",
+        });
       }
 
-      activeSession.classId = classdB?.id!,
-      activeSession.startedAt = new Date().toISOString(),
-      activeSession.attendance = {};
+      ((activeSession.classId = classdB?.id!),
+        (activeSession.startedAt = new Date().toISOString()),
+        (activeSession.attendance = {}));
 
       res.status(200).json({
-        success : true,
-        data : {
-          classId : classdB?.id,
-          startedAt : activeSession.startedAt,
-        }
-      })
-
+        success: true,
+        data: {
+          classId: activeSession?.classId,
+          startedAt: activeSession.startedAt,
+        },
+      });
     } catch (error) {
       console.log(error);
       res.status(500).json({
-        success : false,
-        error : "internal server error",
-      })
+        success: false,
+        error: "internal server error",
+      });
     }
   },
 );
 
-app.listen(3000 , ()=>{
+server.listen(3000, () => {
   console.log("server is running at 3000");
-})
+});
