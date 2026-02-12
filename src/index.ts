@@ -23,7 +23,6 @@ const activeSession: {
   attendance?: {};
 } = {};
 
-
 // const getActiveSession = ( teachedId = null)=>{
 //   if(!activeSession)
 // }
@@ -61,7 +60,7 @@ wss.on("connection", (ws, req) => {
     userId,
     role,
   };
-  ws.on("message", (message) => {
+  ws.on("message", async (message) => {
     const parsed = JSON.parse(message.toString());
     console.log("dadta", parsed);
     const { event, data } = parsed;
@@ -92,6 +91,84 @@ wss.on("connection", (ws, req) => {
             }),
           );
           return;
+        }
+
+      case "TODAY_SUMMARY":
+        // @ts-ignore
+        if (ws.user.role === "teacher") {
+          if (!activeSession) {
+            ws.send(
+              JSON.stringify({
+                event: "ERROR",
+                data: { message: "No active attendance session" },
+              }),
+            );
+          }
+          const result = Object.values(activeSession?.attendance!);
+          const present = result.filter((res) => res === "present").length;
+          const absent = result.filter((res) => res === "absent").length;
+          const total = result.length;
+
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(
+                JSON.stringify({
+                  event: "TODAY_SUMMARY",
+                  data: {
+                    present,
+                    absent,
+                    total,
+                  },
+                }),
+              );
+            }
+          });
+        } else {
+          ws.send(
+            JSON.stringify({
+              event: "ERROR",
+              data: { message: "Forbidden, teacher event only" },
+            }),
+          );
+          return;
+        }
+
+      case "MY_ATTENDANCE":
+        // @ts-ignore
+        if (ws.user.role === "student") {
+          if(!activeSession){
+            ws.send(JSON.stringify({ "event" : "ERROR" , "data" : { "message" : "No active attendance session"}}));
+          }
+          const classdB = await db.class.findFirst({
+            where : {
+              id :activeSession.classId!,
+              students : {
+                some : {
+                  // @ts-ignore
+                  id : ws.user.userId,
+                }
+              }
+            },
+          })
+          if(!classdB){
+            ws.send(JSON.stringify({
+              "event" : "ERROR",
+              "data" : {
+                "message" : "No you have not enrolled this class",
+              }
+            }))
+          }
+         
+          // @ts-ignore
+          const status = activeSession.attendance[ws.user.userId] || "not updated yet";
+          ws.send(
+            JSON.stringify({
+              event: "MY_ATTENDANCE",
+              data: {
+                status,
+              },
+            }),
+          );
         }
     }
   });
