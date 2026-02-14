@@ -1,68 +1,49 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import { db } from "./lib.js";
-export async function AuthMiddleware(req : Request , res : Response , next : NextFunction) {
+
+export const AuthMiddleware = async( req : Request , res : Response , next : NextFunction)=>{
     try {
-        const token = req.headers.authorization;
-        console.log("token" , token);
-        if(!token){
-            res.status(400).json({
+        const header = req.headers.authorization;
+        if(!header){
+            res.status(401).json({
                 success : false,
-                error : "token not found",
+                error : "Unauthorized, token missing or invalid",
             })
             return;
         }
-        const [scheme , header] = token.split(" ");
-        const userDecoder = jwt.verify(header! , process.env.JWTSECRET!) as JwtPayload;
-        console.log("decoder" , userDecoder);
-        if(!userDecoder){
-            res.status(404).json({
-                success : false,
-                error : "user not found",
-            })
-        }
+        const [scheme , token ] = header?.split(" ");
+        const { userId , role } = jwt.verify(token! , process.env.JWTSECRET!) as JwtPayload;
         const user = await db.user.findUnique({
             where : {
-                id : userDecoder.userId,
-            },
-            select : {
-                id : true,
-                name : true,
-                email : true,
-                role : true,
+                id : userId,
             }
         })
-
-        if(!user){
+        if(!user || user.role !== role){
             return res.status(404).json({
-                success : false,
-                error : "user not found",
+                success: false,
+                error: "User not found"
             })
         }
         req.userId = user.id,
         req.role = user.role,
         next();
-                
     } catch (error) {
-        console.log("error jwt" , error);
-        res.status(500).json({
+        console.log(error);
+        return res.status(500).json({
             success : false,
             error : "jwt error",
         })
     }
 }
 
-export async function  TeacherMiddleware(req : Request , res : Response , next : NextFunction) {
+export const teacherMiddleware = async(req : Request , res : Response , next : NextFunction)=>{
     try {
-        const user = await db.user.findUnique({
-            where : {
-                id : req.userId!,
-            }
-        })
-        if(user?.role !== "teacher"){
+        const { userId , role } = req;
+        if( role !== "teacher"){
             res.status(403).json({
                 success : false,
-                error : 'Forbidden, teacher access required'
+                error : "Forbidden, teacher access required",
             })
             return;
         }
@@ -71,7 +52,27 @@ export async function  TeacherMiddleware(req : Request , res : Response , next :
         console.log(error);
         return res.status(500).json({
             success : false,
-            error : "teacher access required",
+            error : "internal server error",
+        })
+    }
+}
+
+export const studentMiddleware = async(req : Request , res : Response , next : NextFunction)=>{
+    try {
+        const { userId , role } = req;
+        if(role !== "student"){
+            res.status(403).json({
+                success : false,
+                error : "Student not found"
+            })
+            return;
+        }
+        next();
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            success : false,
+            error : "internal server error",
         })
     }
 }
